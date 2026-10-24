@@ -1,0 +1,52 @@
+
+name: Deploy Node.js App
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Ansible
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible
+          ansible-galaxy collection install community.general
+
+      - name: Configure SSH key
+        env:
+          EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$EC2_SSH_PRIVATE_KEY" > ~/.ssh/ec2_key
+          chmod 600 ~/.ssh/ec2_key
+
+      - name: Deploy using Ansible
+        env:
+          EC2_HOST: ${{ vars.EC2_HOST }}
+        run: |
+          test -n "$EC2_HOST"
+          ansible-playbook \
+            -i "${EC2_HOST}," \
+            -u ubuntu \
+            --private-key ~/.ssh/ec2_key \
+            ansible/site.yml
+
+      - name: Clean up SSH key
+        if: always()
+        run: rm -f ~/.ssh/ec2_key
